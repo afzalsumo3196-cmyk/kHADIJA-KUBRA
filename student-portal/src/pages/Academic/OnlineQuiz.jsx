@@ -38,6 +38,7 @@ const OnlineQuiz = ({ courseId }) => {
   const [submitError, setSubmitError] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0); // Total seconds remaining
   
+  const hasAutoSubmittedRef = useRef(false);
   const timerRef = useRef(null);
 
   // Helper to format remaining seconds into MM:SS
@@ -70,7 +71,7 @@ const OnlineQuiz = ({ courseId }) => {
   // Final submit handler (called when clicking Submit Exam or when total time expires)
   const submitQuizFinal = useCallback(async () => {
     if (!activeQuiz || isSubmittingRef.current) return;
-    clearInterval(timerRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
     isSubmittingRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
@@ -106,25 +107,34 @@ const OnlineQuiz = ({ courseId }) => {
     }
   };
 
-  // Continuous Total Timer Logic (counts down from total duration until 0)
+  // Continuous Total Timer Logic (decrements remaining seconds until 0)
   useEffect(() => {
-    if (quizState === 'ACTIVE' && activeQuiz && !submitting) {
+    if (quizState === 'ACTIVE' && activeQuiz) {
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             clearInterval(timerRef.current);
-            submitQuizFinal();
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
     } else {
-      clearInterval(timerRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
     }
 
-    return () => clearInterval(timerRef.current);
-  }, [quizState, activeQuiz, submitting, submitQuizFinal]);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [quizState, activeQuiz]);
+
+  // Auto-submit trigger when timer reaches 0 (fires exactly once, preventing infinite retry loops)
+  useEffect(() => {
+    if (quizState === 'ACTIVE' && activeQuiz && timeLeft === 0 && !hasAutoSubmittedRef.current && !submitting) {
+      hasAutoSubmittedRef.current = true;
+      submitQuizFinal();
+    }
+  }, [timeLeft, quizState, activeQuiz, submitting, submitQuizFinal]);
 
   const startQuiz = (quiz) => {
     setActiveQuiz(quiz);
@@ -132,6 +142,7 @@ const OnlineQuiz = ({ courseId }) => {
     selectedAnswersRef.current = {};
     setSelectedAnswers({});
     isSubmittingRef.current = false;
+    hasAutoSubmittedRef.current = false;
     setSubmitting(false);
     setSubmitError(null);
     // Convert teacher's timeLimit in minutes into total seconds
@@ -472,16 +483,25 @@ const OnlineQuiz = ({ courseId }) => {
 
       {/* Submit Error Banner with Retry */}
       {submitError && (
-        <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-semibold flex items-center justify-between gap-4">
+        <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-semibold flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <span>{submitError}</span>
-          <button
-            type="button"
-            onClick={handleNextQuestion}
-            disabled={submitting}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs shrink-0 transition-colors"
-          >
-            {submitting ? 'Retrying...' : 'Retry Submit'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={submitQuizFinal}
+              disabled={submitting}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-colors"
+            >
+              {submitting ? 'Retrying...' : 'Retry Submit'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuizState('IDLE')}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs transition-colors"
+            >
+              Return to Quizzes
+            </button>
+          </div>
         </div>
       )}
 

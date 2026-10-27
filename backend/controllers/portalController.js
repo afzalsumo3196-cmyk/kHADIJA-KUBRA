@@ -489,8 +489,14 @@ export const submitQuiz = async (req, res) => {
         if (quiz.startDate && now < new Date(quiz.startDate)) {
             return res.status(400).json({ success: false, message: 'This quiz has not started yet' });
         }
-        if (quiz.endDate && now > new Date(quiz.endDate)) {
-            return res.status(400).json({ success: false, message: 'This quiz has ended' });
+        // Allow a grace period of (timeLimit + 5 minutes) so that a student who started before the deadline
+        // is not abruptly rejected when submitting as the clock passes the deadline.
+        if (quiz.endDate) {
+            const graceMinutes = (Number(quiz.timeLimit) || 15) + 5;
+            const cutoff = new Date(new Date(quiz.endDate).getTime() + graceMinutes * 60 * 1000);
+            if (now > cutoff) {
+                return res.status(400).json({ success: false, message: 'This quiz has ended and the submission window has closed.' });
+            }
         }
 
         // Check if there is an existing grade (using exact quizId first, then legacy fallback)
